@@ -165,6 +165,9 @@ static void ui_power_on(void)
 #endif
     undo_clear();
     lists_clear();                                /* (Skiff phase 5: no lists, no patterns on the tracks) */
+    pads_defaults();                              /* (EMP16 pads: main.c felucca_init's; nothing picked, learning, lit) */
+    pad_pick = pad_learn = pad_heard = pad_last = 0;
+    memset((void *)pad_hit_ms, 0, sizeof pad_hit_ms);
     motion_lost = 0;
     memset(&sg, 0, sizeof sg);                    /* (.. SONG's entry A, no pick) */
     memset(proj_slot, 0, sizeof proj_slot);
@@ -2088,6 +2091,9 @@ static int test_presets_knob(void)
                 sel_ok &= ui.bslot == 1u && same_snd && same_steps;
             } else if (g == GR_SONG) {                 /* (Skiff phase 5) SONG: the entry */
                 sel_ok &= sg.entry == 1u && same_snd && same_steps;
+            } else if (g == GR_PADSET) {               /* (EMP16 pads) PAD SETUP: the pad */
+                sel_ok &= pad_pick == 1u && same_snd && same_steps;
+                pad_pick = 0;
             } else if (g == GR_SLOTS) {
                 sel_ok &= song.g[G_SLOT] == slot + 1 && same_snd && same_steps;
             } else if (g == GR_EVENTS) {   /* (AUTOMATION, U3: the list; its row) */
@@ -4760,12 +4766,14 @@ static int test_midi_leds(void)
     bad += check("  TRS MIDI IN: E4 lights key 12 while held", ok && key_leds(0) == 0u);
     song.g[G_ROUTE] = 1;                               /* ROUT SEL: every channel to the selected track */
     sel_set(2);
+    pads.on = 0;                                       /* ((EMP16 pads) on, channel 10's 20..83 are the pads' first) */
     usb_note(9, 62, 100);
     ok = midi_sel_on[9][62] == 3u && key_leds(0) == 1u << 9;
     usb_note(9, 62, 0);
     song.g[G_ROUTE] = 0;
     sel_set(0);
-    bad += check("  ROUT SEL: channel 10 into the selected track lights its key", ok && key_leds(0) == 0u);
+    pads.on = 1;
+    bad += check("  ROUT SEL: channel 10 into the selected track lights its key (the pads off)", ok && key_leds(0) == 0u);
     usb_note(0, 60, 100);
     song.octave = -1;
     ok = key_leds(0) == 1u << 19;
@@ -5912,8 +5920,13 @@ static int test_seq_tools(void)
     press(B_SEQ); frames(320);
     ok &= cur_page()->graph == GR_SONG;
     press(B_SEQ); frames(320);
+    ok &= cur_page()->graph == GR_PADS;               /* ((EMP16 pads) PADS, PAD SETUP after SONG) */
+    press(B_SEQ); frames(320);
+    ok &= cur_page()->graph == GR_PADSET;
+    press(B_SEQ); frames(320);
     ok &= cur_page()->graph == GR_ROLL;
-    bad += check("  a tap on NOTES: the next SEQ page ((2.0) FEEL PATTERN AUTOMATION SONG NOTES; the hint first)", ok);
+    bad += check("  a tap on NOTES: the next SEQ page ((2.0) FEEL PATTERN AUTOMATION SONG PADS PAD SETUP NOTES; the hint "
+                 "first)", ok);
 
     /* the whole sequence: REVERSE (a note's ties stay after it), SHIFT, CLEAR, locks, LEN, silent keys, undo */
     ui_power_on();
@@ -9150,6 +9163,76 @@ static int test_perform(void)
     return bad;
 }
 
+/* (EMP16 pads) SEQ > PADS and PAD SETUP (the pads' logic: tests/pads_test.c): PADS' KNOB 1..4 bank A..D's track's
+ * LEVEL, OCT+ LEARN on (a hit on each bank's pad 1 in turn), OCT- off, leaving the page ends it; PAD SETUP: PRESETS the
+ * pad, a hit on a pad picks it, KNOB 1 TYPE, a SOUND's KNOB 2..4 TRACK NOTE VELOCITY, OCT+ the whole bank */
+static void pad_in(uint32_t note, uint32_t vel)     /* a hit from the EMP16 (channel 10), heard in the next block */
+{
+    midi_enqueue(0x9u | 0x99u << 8 | note << 16 | vel << 24, 1);
+    events_block(CTL);
+    midi_enqueue(0x8u | 0x89u << 8 | note << 16, 1);
+    events_block(CTL);
+}
+static int test_pads_pages(void)
+{
+    int bad = 0, ok;
+    ui_power_on();
+    go_page(GR_PADS);
+    frame();
+    turn(EN_K2, -3);
+    ok = trk[1].p[P_LEVEL] < 104 && trk[0].p[P_LEVEL] == 104;
+    bad += check("(EMP16 pads) PADS: KNOB 2 turns bank B's (T2's) LEVEL, the others stay", ok);
+    press(B_OCTUP);
+    ok = pad_learn == 1u && msg_is("LEARN: HIT PAD 1 OF A");
+    pad_in(40, 100); frame();
+    ok &= pads.base[0] == 40 && pad_learn == 2u && msg_is("LEARN: HIT PAD 1 OF B");
+    press(B_OCTDN);
+    ok &= !pad_learn && cur_page()->graph == GR_PADS;
+    bad += check("  OCT+: LEARN, a hit is bank A's pad 1, then B's asked; OCT-: LEARN off, still on PADS", ok);
+    press(B_OCTUP);
+    go_page(GR_PADSET);
+    frame();
+    ok = !pad_learn && pad_setup_on;
+    turn(EN_PRESET, 2);
+    ok &= pad_pick == 2u;
+    pad_in(pads.base[1] + 4u, 100); frame();
+    ok &= pad_pick == 20u && padq_w == padq_r;
+    bad += check("  PAD SETUP: LEARN ended by leaving PADS; PRESETS picks the pad; a hit picks B's pad 5, launches nothing", ok);
+    turn(EN_K1, 1);
+    turn(EN_K2, -1);
+    ok = (pads.cfg[20][0] & PAD_SOUND) && PAD_TRK(pads.cfg[20][0]) == 3u;
+    press(B_OCTUP);
+    for (uint32_t i = 16; i < 32; i++)
+        ok &= pads.cfg[i][0] == pads.cfg[20][0];
+    ok &= msg_is("B ALL SOUND") && !(pads.cfg[0][0] & PAD_SOUND);
+    bad += check("  KNOB 1 TYPE SOUND, KNOB 2 TRACK T4; OCT+: bank B all SOUND (said), bank A as it was", ok);
+    turn(EN_K1, -1);
+    ok = !(pads.cfg[20][0] & PAD_SOUND);
+    go_page(GR_SONG);
+    frame();
+    ok &= !pad_setup_on;
+    bad += check("  KNOB 1 back to PATTERN; another page: hits launch again", ok);
+    ui_power_on();
+    go_page(GR_PADS);
+    frame();
+    ml_start();
+    frame();
+    turn(EN_K3, 1);                                   /* (MIDI LEARN: bank C's LEVEL picked; a slider's CC 22) */
+    frame();
+    midi_enqueue(0xBu | 0xB0u << 8 | 22u << 16 | 64u << 24, 1);
+    events_block(CTL);
+    frame();
+    press(B_OCTUP);
+    ok = !ui.ml.on && ml_cc_of(2, P_LEVEL) == 23u && cur_page()->graph == GR_PADS && !pad_learn;
+    midi_enqueue(0xBu | 0xB0u << 8 | 22u << 16 | 0u << 24, 1);
+    events_block(CTL);
+    ok &= trk[2].p[P_LEVEL] == 0;
+    bad += check("  MIDI LEARN on PADS: KNOB 3 picks bank C's LEVEL, a slider's CC learned (OCT+ done, not LEARN PADS)", ok);
+    ml_clear_all();
+    ui_power_on();
+    return bad;
+}
+
 /* Skiff: scenes in the PERFORM layer (bank.c; the logic: tests/bank_test.c scenes): KNOB 2 KEYS SCENE puts the 16
  * scenes on the white keys (PRESETS turns KEYS); SAVE held + a key stores the tracks as they are, a key alone
  * recalls (stopped: at once); the one recalled or stored last lit, the other kept ones breathe; back: the entries */
@@ -9754,6 +9837,7 @@ int main(void)
     bad += test_pool();                               /* Skiff phase 5: SAVE > PATTERNS, the pool view */
     bad += test_perform();                            /* Skiff: the PERFORM layer (live switching) */
     bad += test_scenes();                             /* Skiff: scenes (the PERFORM layer's KEYS SCENE) */
+    bad += test_pads_pages();                         /* (EMP16 pads) SEQ > PADS, PAD SETUP */
     bad += test_song_page();                          /* Skiff phase 5: SEQ > SONG */
     bad += test_song_chain();                         /* (2.0, #44) a chain on SONG and NOTES */
     bad += test_duck_page();                          /* Skiff: FX > DUCK */

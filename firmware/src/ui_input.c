@@ -1514,6 +1514,10 @@ static void edit_param(uint32_t slot, int32_t steps)
         song_knob(slot, steps);
         return;
     }
+    if (pg->graph == GR_PADS || pg->graph == GR_PADSET) { /* (EMP16 pads) the LEVELs; a pad's setup */
+        pads_turn(pg->graph, slot, steps);
+        return;
+    }
     if (sheet_of(pg->graph)) {                            /* (Skiff phase 7, 8; FM6 LAB) a sheet: its window (SHEETS) */
         sheet_of(pg->graph)->knob(slot, steps);
         return;
@@ -1615,6 +1619,14 @@ static void act_do(void)
     }
     if (cur_page()->graph == GR_EVENTS) {
         ev_oct();
+        return;
+    }
+    if (cur_page()->graph == GR_PADS) {                   /* (EMP16 pads) LEARN on (or off) */
+        pads_learn(!pad_learn);
+        return;
+    }
+    if (cur_page()->graph == GR_PADSET) {                 /* (EMP16 pads) the pad's TYPE on its whole bank */
+        pads_whole_bank();
         return;
     }
     if (cur_page()->graph == GR_SONG) {                   /* (Skiff phase 5) the pick in, or the entry played */
@@ -1883,6 +1895,8 @@ static void presets_turn(int32_t s)
         t->p[P_DIR] = (int16_t)param_turn(track_desc(t, P_DIR), t->p[P_DIR], s);
         motion_capture(t, P_DIR, t->p[P_DIR]);
         ml_knob(t, P_DIR);
+    } else if (g == GR_PADSET) {                          /* (EMP16 pads) PAD SETUP: the pad (a hit on it picks it too) */
+        pads_pick_turn(s);
     } else if (sheet_of(g)) {                             /* (Skiff phase 8; FM6 LAB) a sheet's pick: DRUM-X's sound */
         sheet_of(g)->pick(s);                             /* (BD .. CB), FM6's operator */
     } else if (g == GR_SLICES) {                          /* ((Skiff U4, F7) SLICES: KNOB 1's, the slice; was nothing) */
@@ -2447,6 +2461,8 @@ static void ui_input(void)
             song_back();
         else if (ui.act)
             ui.act = ui.act2 = 0;
+        else if (pad_learn)                             /* ((EMP16 pads) LEARN: off, the banks as learned so far) */
+            pads_learn(0);
         else if (ui.ev_del)                             /* ((Skiff U2) AUTO LIST's DELETE) */
             ui.ev_del = 0;
         else

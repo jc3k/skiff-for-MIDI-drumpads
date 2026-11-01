@@ -328,6 +328,8 @@ if [ -f build/gen/felucca_tables.h ]; then
     run "persistence, the converter's build (FELUCCA_LEGACY): an SKF2 autosave, FUN5 and FUN7 slots" "$OUT/persistence_test_legacy"
     $CC -w -Ibuild/gen -Ifirmware/src -o "$OUT/bank_test" tests/bank_test.c -lm
     run "pattern bank (Skiff): patterns kept exactly, torn saves, fallback, wear, the sequence wrap" "$OUT/bank_test"
+    $CC -O1 -w -Ibuild/gen -Ifirmware/src -o "$OUT/pads_test" tests/pads_test.c -lm
+    run "EMP16 pads: notes to banks and pads, PATTERN launch and STOP at the launch point, SOUND pads, LEARN, kept with the project" "$OUT/pads_test"
     $CC -w $LEGACY -Ibuild/gen -Ifirmware/src -o "$OUT/bank_test_legacy" tests/bank_test.c -lm
     run "pattern bank, the converter's build (FELUCCA_LEGACY): projects of before become patterns (proj_migrate)" "$OUT/bank_test_legacy"
     $CC -w -DBOARD_SMK37=1 -Ifirmware/hal -Ibuild/gen -Ifirmware/src -o "$OUT/bank_test_smk" tests/bank_test.c -lm

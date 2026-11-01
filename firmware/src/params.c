@@ -497,7 +497,9 @@ enum { GR_NONE, GR_ADSR, GR_LFO, GR_STEPS, GR_ARP, GR_SCALE, GR_FX, GR_ROLL, GR_
        GR_INS,                     /* (Skiff 1.3) FX > INSERT: its TYPE's transfer or sweep (ui_pgraph.c graph_insert) */
        GR_SMIX,                    /* (Skiff, #21) EDIT > SAMPLES: a user sample's LEVEL, REVERB, DELAY (ui.c smx_zone) */
        GR_LMIX,                    /* (2.0, #36, the user's pick 1A) EDIT > LANE MIX: a kit's lane levels and pans */
-       GR_FOLLOW };                /* (2.1) SCL > FOLLOW: the chord it follows, as CHORD's (ui_graph.c graph_follow) */
+       GR_FOLLOW,                  /* (2.1) SCL > FOLLOW: the chord it follows, as CHORD's (ui_graph.c graph_follow) */
+       GR_PADS,                    /* (EMP16 pads) SEQ > PADS: the four banks' 16 pads, what plays; KNOB 1..4 T1..T4 LEVEL */
+       GR_PADSET };                /* (EMP16 pads) SEQ > PAD SETUP: a pad's TYPE, a SOUND's TRACK NOTE VELOCITY (pads.c) */
 
 typedef struct {
     const char *title;
@@ -566,6 +568,8 @@ static const page_t PAGES[] = {
     {"PATTERN", FAM_SEQ, SC_TRACK, GR_STEPS, {P_SLEN, P_SDIV, P_SSWING, P_SGATE}},   /* (2.0) PRESETS: the track's DIR */
     {"AUTOMATION", FAM_SEQ, SC_TRACK, GR_EVENTS, {0xFF, 0xFF, 0xFF, 0xFF}},   /* 1.1.5's AUTO LIST: the locks and events */
     {"SONG", FAM_SEQ, SC_TRACK, GR_SONG, {0xFF, 0xFF, 0xFF, 0xFF}},   /* (Skiff phase 5) the lists (ui_input.c song_knob) */
+    {"PADS", FAM_SEQ, SC_GLOBAL, GR_PADS, {0xFF, 0xFF, 0xFF, 0xFF}},   /* (EMP16 pads) the banks; T1..T4 LEVEL (pads_desc) */
+    {"PAD SETUP", FAM_SEQ, SC_GLOBAL, GR_PADSET, {0xFF, 0xFF, 0xFF, 0xFF}},   /* (EMP16 pads) a pad (pads_desc) */
 };
 #define NPAGES (sizeof(PAGES) / sizeof(PAGES[0]))
 /* (2.0, D 1A) the MOD page: the route KNOB 1 picks (0..10): the seven fixed routings (LFO DEST's and ENV DEST's of
@@ -579,8 +583,11 @@ static uint32_t page_lane(void);   /* (Skiff U3, R6) EDIT > LANES, (2.0) LANE MI
 static uint32_t smx_zone(uint32_t *k);   /* (#21) EDIT > SAMPLES: the sample (ui.c) */
 static int16_t smx_sel __attribute__((section(".pool")));   /* (#21) .. KNOB 1's: its number, 1..16 */
 
+static const param_desc_t *pads_desc(uint32_t graph, uint32_t slot, int16_t **valp);   /* (EMP16 pads) pads_bank.c */
 static const param_desc_t *page_desc(const page_t *pg, uint32_t slot, int16_t **valp)
 {
+    if (pg->graph == GR_PADS || pg->graph == GR_PADSET)   /* (EMP16 pads) */
+        return pads_desc(pg->graph, slot, valp);
     uint32_t id = pg->graph == GR_LMIX ? (slot == 1u ? P_LN0 + page_lane() : slot == 2u ? P_LPAN0 + page_lane() : 0xFFu) :
                   pg->graph != GR_LANES ? pg->id[slot] : slot == 1u ? P_LN0 + page_lane() :   /* (LANES: its LEVEL, */
                   slot == 2u ? P_LTUNE0 + page_lane() : slot == 3u ? P_LDECAY0 + page_lane() : 0xFFu;   /* (phase 9)

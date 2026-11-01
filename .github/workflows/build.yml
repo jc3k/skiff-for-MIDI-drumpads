@@ -1,0 +1,35 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# (EMP16 pads fork) Builds the firmware package on every push (and by hand: Actions > build > Run workflow).
+# The .fwsc is attached to the run as the artifact "firmware". BUILDING.md has the same steps for a computer.
+name: build
+on:
+  push:
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Python packages (fonts, icons)
+        run: pip install Pillow fonttools
+      - name: JieLi toolchain
+        run: sh tools/get_toolchain.sh "$HOME/.jieli"
+      - name: JieLi AC79 SDK (the three files the package needs)
+        run: |
+          git clone --depth 1 --filter=blob:none --sparse --branch AC79NN_SDK_V1.2.1_2023-12-13 \
+              https://gitee.com/Jieli-Tech/fw-AC79_AIoT_SDK.git "$HOME/fw-AC79_AIoT_SDK"
+          git -C "$HOME/fw-AC79_AIoT_SDK" sparse-checkout set cpu/wl82/tools
+      - name: Build
+        run: JIELI_TOOLCHAIN="$HOME/.jieli/toolchain" AC79_SDK="$HOME/fw-AC79_AIoT_SDK" ./build.sh
+      - name: Pads tests
+        run: |
+          mkdir -p build/host
+          cc -O1 -w -Ibuild/gen -Ifirmware/src -o build/host/pads_test tests/pads_test.c -lm
+          build/host/pads_test
+      - uses: actions/upload-artifact@v4
+        with:
+          name: firmware
+          path: build/felucca.fwsc

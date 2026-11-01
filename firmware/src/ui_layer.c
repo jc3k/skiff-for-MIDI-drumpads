@@ -1409,7 +1409,7 @@ static void shift_map(smap_t *m)
     const sheet_t *sh = sheet_of(g);
     const char *pj = ui.home || g == GR_BROWSE ? SND : sel ? "STEP" : g == GR_STEPS ? "DIR" :
                      g == GR_USER || g == GR_SLOTS ? "SLOT" : g == GR_BANK ? "PATTERN" : g == GR_EVENTS ? "ROW" :
-                     g == GR_SONG ? "ENTRY" : sh ? sh->pj : g == GR_SLICES ? "SLICE" : SND;
+                     g == GR_SONG ? "ENTRY" : g == GR_PADSET ? "PAD" : sh ? sh->pj : g == GR_SLICES ? "SLICE" : SND;
     static const smap_t ALL[9] = {{"BUTTONS", "PAGES", 0}, {"HOLD ONE", "ITS LAYER", 0}, {"HOLD SAVE", "UNDO", 0},
                                   {"+ SAVE", "TAKE", 2}, {"+ REC", "REC SET", 2}, {"+ BUTTON", "LOCK", 2},
                                   {"+ PRESETS", "RANGE", 2}, {"+ OCT-", "COPY", 2}, {"+ OCT+", "PASTE", 2}};   /* ((2.0)

@@ -809,6 +809,7 @@ enum { S_HOME, S_HOME_IDLE, S_MESSAGE, S_MESSAGE_KEY, S_MESSAGE_NOFILE, S_PRESET
        S_SONG_CHAINS, S_SONG_CHAIN_COPY,                                                      /* (2.0, #44's box) */
        S_DRUM_KIT_USR, S_LANES_USR,                                                           /* (2.0, #35) */
        S_FOLLOW, S_FOLLOW_SCALE, S_FOLLOW_FIT, S_FOLLOW_OFF, S_FOLLOW_WAIT,                   /* (2.1) */
+       S_PADS, S_PADS_PLAYING, S_PADS_LEARN, S_PAD_SETUP, S_PAD_SETUP_SOUND,                  /* (EMP16 pads) */
        S_MOCK_HOME, S_MOCK_PRESETS, S_MOCK_SEQ, S_MOCK_DRUM, S_MOCK_MIXER, S_MOCK_DIALOG, S_MOCK_MENU, S_COUNT };
 static const char *const S_NAME[S_COUNT] = {"home", "home_idle", "message", "message_key", "message_nofile", "presets", "presets_nofav", "user",
     "project", "lanes", "step", "pattern", "chance", "motion", "drum",
@@ -842,7 +843,8 @@ static const char *const S_NAME[S_COUNT] = {"home", "home_idle", "message", "mes
     "notes_range", "notes_pick", "feel_range", "notes_overlap", "momentary", "pool_empty", "pool_unused", "confirm_empty",
     "song_once", "song_new", "song_copyplus", "song_chain", "song_chain3", "notes_chain", "lane_mix", "lane_mix_dx",
     "song_sound", "song_sounds", "song_chains", "song_chain_copy", "drum_kit_usr", "lanes_usr",
-    "follow", "follow_scale", "follow_fit", "follow_off", "follow_wait", "mock_home", "mock_presets", "mock_seq", "mock_drum", "mock_mixer", "mock_dialog", "mock_menu"};
+    "follow", "follow_scale", "follow_fit", "follow_off", "follow_wait",
+    "pads", "pads_playing", "pads_learn", "pad_setup", "pad_setup_sound", "mock_home", "mock_presets", "mock_seq", "mock_drum", "mock_mixer", "mock_dialog", "mock_menu"};
 
 /* the scenes of the UI design screens: the state the UI-redesign
  * prototype drew them from (its setup(): two pattern tracks, the drum pattern on track 4, a synthetic scope),
@@ -1371,6 +1373,32 @@ static void setup(int s)
         go_title("FOLLOW");
         ui.hot_col = s == S_FOLLOW_SCALE ? 1 : s == S_FOLLOW_FIT ? 1 : 0; ui.hot_t = 30;
         break;
+    case S_PADS:                                    /* ((EMP16 pads) SEQ > PADS: the lists as SONG's; bank D a drum kit */
+    case S_PADS_PLAYING:                            /* (SOUND pads on T5, its pad 2 just hit); playing: A's next */
+    case S_PADS_LEARN:                              /* outlined, B's STOP staged; LEARN waiting for C's pad 1; */
+    case S_PAD_SETUP:                               /* PAD SETUP: A's pad 3 (a PATTERN) picked, then D's pad 2 (a */
+    case S_PAD_SETUP_SOUND: {                       /* SOUND: T5, SNARE, VELOCITY as played) */
+        uint32_t i;
+        song_lists(s == S_PADS_PLAYING);
+        pads_defaults();
+        for (i = 0; i < PAD_PER; i++) {
+            pads.cfg[48 + i][0] = (uint8_t)(PAD_SOUND | 4u);
+            pads.cfg[48 + i][1] = DRUM_LANE_NOTE[i % NLANE];
+        }
+        pads.cfg[63][1] = 50;                       /* (a note of no lane: S) */
+        if (s == S_PADS_PLAYING) {
+            launch_q[0].adv = launch_q[1].adv = 0;
+            launch_q[1].rest = 1;
+            launch_q[1].slot = lists.cur[1];
+            pad_hit_ms[49] = fm1_ms ? fm1_ms : 1u;
+        }
+        go_page(s >= S_PAD_SETUP ? GR_PADSET : GR_PADS);
+        pad_pick = s == S_PAD_SETUP_SOUND ? 49u : 2u;
+        if (s == S_PADS_LEARN)
+            pad_learn = 3;
+        ui.hot_col = 0; ui.hot_t = 30;
+        break;
+    }
     case S_SONG_SOUND:                              /* ((2.0, #30, 2A) entries with a sound: T1 A, T2 A C D, T4 E, T6 C */
     case S_SONG_SOUNDS: {                           /* (corners cut); T2 on STRINGS: KNOB 2 at SOUND on C (OCT+: SET
                                                      * SOUND STRINGS); no pick: C's sound named */

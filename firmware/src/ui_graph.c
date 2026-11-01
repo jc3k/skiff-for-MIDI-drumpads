@@ -1654,6 +1654,21 @@ static uint32_t graph_signature(void)
             h = (h ^ (bank_cur(i) | bank_next(i) << 8 | (uint32_t)trk_pid[i] << 16)) * 16777619u;
         h = (h ^ (sg.entry * 40503u + song_pick() * 769u + bank_gen() * 2654435761u)) * 16777619u;   /* ((2.0) COPY+) */
     }
+    if (pg->graph == GR_PADS || pg->graph == GR_PADSET) {   /* (EMP16 pads) the pads' setup, what each bank plays,
+                                                      * what is staged, the lists, a hit's light, LEARN, the pick */
+        const uint8_t *pb = (const uint8_t *)&pads;
+        for (i = 0; i < sizeof pads; i++)
+            h = (h ^ pb[i]) * 16777619u;
+        for (i = 0; i < PAD_BANKS; i++)
+            h = (h ^ (pads_playing(i) | pads_staged(i) << 8 | (uint32_t)pads_stopping(i) << 16 |
+                      (uint32_t)pads_pattern(i * PAD_PER + pads_playing(i) % PAD_PER) << 20)) * 16777619u;
+        for (i = 0; i < PAD_N; i++)
+            h = (h ^ (pads_pattern(i) + (uint32_t)pads_entry_sound(i) * 256u +
+                      (uint32_t)(pad_hit_ms[i] && fm1_ms - pad_hit_ms[i] < 160u) * 512u)) * 16777619u;
+        h = (h ^ (pad_pick + pad_learn * 97u + bank_gen() * 2654435761u)) * 16777619u;
+        for (i = 0; i < PAD_BANKS; i++)
+            h = (h ^ (uint32_t)trk[i].p[P_LEVEL]) * 16777619u;
+    }
     if (pg->scope == SC_ENGINE && (ENGINES[t->eng_req % NENGINES] == &ENG_WHEEL || t->eng_req % NENGINES == ENGI_FM6 ||
                                    (FELUCCA_FM4 && t->eng_req % NENGINES == ENGI_DIGITAL)))
         h ^= (ui.hot_t ? ui.hot_col + 1u : 0u) * 65537u;
@@ -1990,6 +2005,108 @@ static void graph_song(void)
                 cv_frame(x - 1, ty - 1, SG_W + 2, SG_TH + 2, cpy ? T_TEXT : mk);
             for (r = 0; r + 1u < reps && r < 3u; r++)
                 cv_rect(x + 1 + 3 * (int32_t)r, ty + SG_TH + 1, 2, 1, mk);
+        }
+    }
+}
+/* (EMP16 pads) SEQ > PADS and PAD SETUP: the four banks side by side, each its 16 pads 4 x 4 as the controller has
+ * them (pad 1 bottom left, row by row up), 13 x 18 tiles as SONG's. A bank's head: its track's number in its colour,
+ * its letter, and (PADS) the pattern playing (STOP: its stop staged). A PATTERN pad: its entry's pattern number in a
+ * tile (playing: the track's colour; staged: outlined in it; its stop staged: the colour dimmed, outlined; a REST a
+ * dash; an entry with a sound its top right corner cut), an empty entry a dot. A SOUND pad: its drum's two letters
+ * (BD SD CP CH OH TM RS CB) or S, framed in the colour of the track it plays, lit a moment on a hit. PAD SETUP: the
+ * picked pad white; LEARN (PADS): the bank waiting for its pad 1 a band of its colour */
+#define PD_BANK_W 59
+#define PD_X(b, c) (3 + PD_BANK_W * (int32_t)(b) + 14 * (int32_t)(c))
+#define PD_W 13
+#define PD_TH 18
+#define PD_Y(r) (20 + 21 * (int32_t)(r))              /* row r from the top (r 0: pads 13..16) */
+static const char *const PD_LANE2[NLANE] = {"BD", "SD", "CP", "CH", "OH", "TM", "RS", "CB"};
+static void graph_pads(int setup)
+{
+    uint32_t b, i;
+    cv_rect(0, 0, 240, (int32_t)cv_h, T_BG);         /* (over the panel, as SONG: the tiles are on the ground) */
+    cv_bg = T_BG;
+    for (b = 0; b < PAD_BANKS; b++) {
+        uint32_t play = pads_playing(b), next = pads_staged(b);
+        int stop = pads_stopping(b), learn = !setup && pad_learn == b + 1u;
+        uint16_t col = T_TRK(b), hb = learn ? col : T_BG;
+        int32_t x0 = PD_X(b, 0);
+        char d[2] = {(char)('1' + b), 0}, l[2] = {(char)('A' + b), 0}, s[8];
+        if (learn)
+            cv_rect(x0 - 2, 1, PD_BANK_W - 2, 17, col);
+        GFX_HOOK_ALIGN(0, 1, 0, 18, AL_V, "pads bank head on its line");
+        cv_text_on(x0, 1 + CAP_IN(M, 17), &AF_M, d, learn ? T_INK : col, hb);
+        cv_text_on(x0 + 10, 1 + CAP_IN(M, 17), &AF_M, l, learn ? T_INK : T_TEXT, hb);
+        s[0] = 0;
+        if (setup && pad_pick / PAD_PER == b) {      /* (PAD SETUP: the pad picked, its number) */
+            str_cpy(s, "PAD ", sizeof s);
+            fmt_int(s + 4, (int32_t)(pad_pick % PAD_PER + 1u));
+        } else if (!setup && play < PAD_PER) {
+            uint32_t id = pads_pattern(b * PAD_PER + play);
+            if (stop)
+                str_cpy(s, "STOP", sizeof s);
+            else if (id < NPAT)
+                pat_num(s, id);
+        }
+        if (s[0]) {
+            GFX_HOOK_ALIGN(0, 1, 0, 18, AL_V, "pads bank head on its line");
+            cv_text_on(x0 + 55 - text_w(&AF_S, s), 1 + CAP_IN(S, 17), &AF_S, s,
+                       learn ? T_INK : setup ? T_TEXT : stop ? T_MID : col, hb);
+        }
+        for (i = 0; i < PAD_PER; i++) {
+            uint32_t pi = b * PAD_PER + i, c0 = pads.cfg[pi][0];
+            int32_t x = PD_X(b, i % 4u), y = PD_Y(3u - i / 4u);
+            int pick = setup && pad_pick == pi;
+            uint16_t fill, ink;
+            char t[3];
+            if (c0 & PAD_SOUND) {                    /* a SOUND pad: framed in its track's colour, lit a moment hit */
+                uint32_t k = PAD_TRK(c0), n = pads.cfg[pi][1], ln;
+                int lit = fm1_ms - pad_hit_ms[pi] < 160u && pad_hit_ms[pi];
+                uint16_t kc = T_TRK(k);
+                for (ln = 0; ln < NLANE && DRUM_LANE_NOTE[ln] != n; ln++)
+                    ;
+                str_cpy(t, ln < NLANE ? PD_LANE2[ln] : "S", sizeof t);
+                fill = pick ? T_TEXT : lit ? kc : T_BG;
+                ink = pick || lit ? T_INK : kc;
+                cv_rrect(x, y, PD_W, PD_TH, 0, fill, T_BG);
+                if (!pick)
+                    cv_frame(x, y, PD_W, PD_TH, kc);
+                GFX_HOOK_ALIGN(x, y, x + PD_W, y + PD_TH, AL_HV, "pads tile text centred");
+                cv_text_in(x, y + CAP_IN(S, PD_TH), PD_W, &AF_S, t, ink, fill);
+                continue;
+            }
+            {
+                uint32_t id = pads_pattern(pi), on = i == play;
+                if (id == PAT_NONE) {                /* an empty entry: a dot */
+                    cv_rect(x + 5, y + PD_TH / 2 - 1, 2, 2, T_DIM);
+                    if (pick)
+                        cv_frame(x, y, PD_W, PD_TH, T_TEXT);
+                    if (i == next)
+                        cv_frame(x - 1, y - 1, PD_W + 2, PD_TH + 2, col);
+                    continue;
+                }
+                if (pick)
+                    fill = T_TEXT, ink = T_INK;
+                else if (on && stop)
+                    fill = ux_mix(T_BG, col, 35), ink = T_TEXT;
+                else if (on)
+                    fill = col, ink = T_INK;
+                else
+                    fill = T_SURF, ink = T_MID;
+                cv_rrect(x, y, PD_W, PD_TH, 0, fill, T_BG);
+                if (id == PAT_REST)
+                    cv_rect(x + 3, y + PD_TH / 2 - 1, PD_W - 6, 2, ink);
+                else {
+                    pat_num(t, id);
+                    GFX_HOOK_ALIGN(x, y, x + PD_W, y + PD_TH, AL_HV, "pads tile text centred");
+                    cv_text_in(x, y + CAP_IN(S, PD_TH), PD_W, &AF_S, t, ink, fill);
+                }
+                if (pads_entry_sound(pi))            /* (an entry with a sound: its corner cut, as SONG's) */
+                    for (uint32_t r = 0; r < 4u; r++)
+                        cv_rect(x + 9 + (int32_t)r, y, 1, (int32_t)r + 1, T_BG);
+                if (i == next || (on && stop))
+                    cv_frame(x - 1, y - 1, PD_W + 2, PD_TH + 2, col);
+            }
         }
     }
 }
@@ -2673,6 +2790,11 @@ static void draw_graph(void)
         case GR_SONG:                                /* (Skiff phase 5) the rows from the panel's top (the mockup's) */
             cv_oy = 0;
             graph_song();
+            break;
+        case GR_PADS:                                /* (EMP16 pads) the banks from the panel's top */
+        case GR_PADSET:
+            cv_oy = 0;
+            graph_pads(pg->graph == GR_PADSET);
             break;
         case GR_EVENTS:
             cv_oy = pad;

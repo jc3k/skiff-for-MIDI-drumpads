@@ -538,7 +538,8 @@ static uint32_t large_kind(void)
         return LK_TALL;
     g = cur_page()->graph;
     return g == GR_BROWSE || g == GR_SLOTS || g == GR_USER || g == GR_BANK || step_page(g) ||
-           g == GR_FEEL || g == GR_SLICES || g == GR_EVENTS || g == GR_SONG || sheet_of(g) ? LK_LABEL : LK_TALL;
+           g == GR_FEEL || g == GR_SLICES || g == GR_EVENTS || g == GR_SONG || g == GR_PADS || g == GR_PADSET ||
+           sheet_of(g) ? LK_LABEL : LK_TALL;
 }
 /* the geometry of the page shown: the cards' height, the panel's top and height */
 static uint32_t card_h(void) { return large_kind() == LK_TALL ? LG_CARD_H : CARD_H; }
@@ -2370,6 +2371,9 @@ static uint32_t act_cols(void)                   /* the columns that are actions
     if (pg->graph == GR_EVENTS)                  /* AUTOMATION: no knob is an action, OCT+ adds / toggles (ev_oct); */
         return ui.ev_top ? 8u : 16u;             /* ((Skiff U3, R5) its top row: CLEAR on KNOB 4) */
     if (pg->graph == GR_SONG) return 16u;       /* (Skiff phase 5) SONG: so too; OCT+ plays or sets (song_oct) */
+    if (pg->graph == GR_PADS || pg->graph == GR_PADSET)
+        return ui.ml.on ? 0u : 16u;              /* (EMP16 pads) PADS: OCT+ LEARN; PAD SETUP: OCT+ the whole bank ((1.3)
+                                                  * MIDI LEARN on: its OCT- OCT+, a slider learned to a LEVEL here) */
     if (pg->graph == GR_USER)
         return 14u;                              /* LOAD ERASE (or NAME, ui.act2) SAVE */
     if (pg->graph == GR_SLOTS)
@@ -2388,7 +2392,8 @@ static uint32_t act_cols(void)                   /* the columns that are actions
 /* the action OCT+ does: its column + 1, 0 = none picked yet */
 static uint32_t act_col(void)
 {
-    if (!ui.home && ((cur_page()->graph == GR_EVENTS && !ui.ev_top) || cur_page()->graph == GR_SONG)) return 5u;
+    if (!ui.home && ((cur_page()->graph == GR_EVENTS && !ui.ev_top) || cur_page()->graph == GR_SONG ||
+                     cur_page()->graph == GR_PADS || cur_page()->graph == GR_PADSET)) return 5u;
     if (!ui.home && cur_page()->graph == GR_BANK) return 4u;
     return ui.act;
 }
@@ -2414,6 +2419,9 @@ static const char *act_name(uint32_t c)          /* column c's action (the foote
     uint32_t id = cur_page()->id[c & 3u];
     if (cur_page()->graph == GR_EVENTS) return ui.ev_top ? "CLEAR" : ev_act_name();
     if (cur_page()->graph == GR_SONG) return song_act_name();
+    if (cur_page()->graph == GR_PADS) return pad_learn ? "STOP LEARN" : "LEARN PADS";   /* (EMP16 pads) */
+    if (cur_page()->graph == GR_PADSET)
+        return pads.cfg[pad_pick % PAD_N][0] & PAD_SOUND ? "ALL BANK SOUND" : "ALL BANK PATTERN";
     if (cur_page()->graph == GR_USER)
         return c == 2u && ui.act2 ? "NAME" : UP_GO[(c + 2u) % 3u];
     if (cur_page()->graph == GR_SLOTS && c == 1u)
@@ -2437,6 +2445,8 @@ static int act_ready(void)
     if (!c--)
         return 0;
     if (cur_page()->graph == GR_EVENTS) return ui.ev_top ? motion_count(TSEL) != 0u : ev_act_ready();
+    if (cur_page()->graph == GR_PADS || cur_page()->graph == GR_PADSET)
+        return 1;                                       /* (EMP16 pads) LEARN, the whole bank: always */
     if (cur_page()->graph == GR_SONG)                   /* (Skiff phase 5) a pick, else an entry to play ((#28) a REST) */
         return song_pick() >= SPICK_NEW && song_pick() < SPICK_CLEAR ? pool_alloc() < NPAT :   /* ((2.0) NEW, COPY+) */
                song_pick() == SPICK_SOUND ? snd_of(s, sb) :   /* ((#30) a sound as it was loaded) */

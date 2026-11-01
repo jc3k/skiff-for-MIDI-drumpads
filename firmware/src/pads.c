@@ -187,3 +187,8 @@ static uint32_t pads_staged(uint32_t b);              /* .. the one staged to co
 static int pads_stopping(uint32_t b);                 /* .. a STOP staged */
 static uint32_t pads_pattern(uint32_t i);             /* pad i's pattern (its entry's), PAT_NONE none, PAT_REST a REST */
 static int pads_entry_sound(uint32_t i);              /* .. its entry carries a sound */
+static void pads_turn(uint32_t graph, uint32_t slot, int32_t steps);   /* a knob on PADS, PAD SETUP */
+static void pads_pick_turn(int32_t s);                /* PRESETS on PAD SETUP: the pad */
+static void pads_learn(int on);                       /* LEARN on / off (PADS' OCT+) */
+static void pads_whole_bank(void);                    /* PAD SETUP's OCT+ */
+static uint8_t pad_pick;                              /* the pad PAD SETUP shows (0..63) */

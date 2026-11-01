@@ -105,7 +105,6 @@ static void pads_press(uint32_t i)
 }
 
 /* ---- PAD SETUP (ui_input.c, ui_draw.c, ui_graph.c: GR_PADSET) ---- */
-static uint8_t pad_pick;                           /* the pad PAD SETUP shows (0..63) */
 /* LEARN on (1: waiting for bank A's pad 1, .. D's), or off */
 static void pads_learn(int on)
 {
@@ -120,6 +119,9 @@ static void pads_learn(int on)
 static void pads_poll(void)
 {
     static uint32_t seen;
+    pad_setup_on = (uint8_t)(!ui.home && !ui.menu && !ui.layer && cur_page()->graph == GR_PADSET);
+    if (pad_learn && (ui.home || ui.menu || cur_page()->graph != GR_PADS))
+        pads_learn(0);                             /* (LEARN ends when PADS is left) */
     while (padq_r != padq_w) {
         uint32_t i = padq[padq_r % PADQ];
         padq_r++;
@@ -189,4 +191,53 @@ static void pads_whole_bank(void)
     }
     pads_say(b, c0 & PAD_SOUND ? "ALL SOUND" : "ALL PATTERN");
     ui.force = 1;
+}
+
+/* ---- the pages' knobs (params.c page_desc -> pads_desc; ui_input.c edit_param -> pads_turn) ---- */
+static const char *const PAD_TYPE_N[] = {"PATTERN", "SOUND"};
+static const char *const PAD_TRK_N[] = {"T1", "T2", "T3", "T4", "T5", "T6"};
+static const char *const PAD_VEL_N[] = {"PLAYED", "15", "23", "31", "39", "47", "55", "63", "71", "79", "87", "95", "103",
+                                        "111", "119", "127"};
+_Static_assert(sizeof PAD_TRK_N / sizeof PAD_TRK_N[0] == NTRK, "a name a track");
+static const param_desc_t PAD_LEVEL_D[PAD_BANKS] = {PD("A LEVEL", F_DB, 0, 127, 104), PD("B LEVEL", F_DB, 0, 127, 104),
+                                                    PD("C LEVEL", F_DB, 0, 127, 104), PD("D LEVEL", F_DB, 0, 127, 104)};
+static const param_desc_t PAD_SET_D[4] = {PE("TYPE", PAD_TYPE_N, 0), PE("TRACK", PAD_TRK_N, 4),
+                                          PD("NOTE", F_INT, 0, 127, 36), PE("VELOCITY", PAD_VEL_N, 0)};
+static int16_t pad_ui[4];                          /* PAD SETUP's values as its cards show them (pads.cfg's) */
+/* PADS: KNOB 1..4 bank A..D's track's LEVEL (the MIXER's, its slider's); PAD SETUP: the picked pad's TYPE, then a
+ * SOUND's TRACK NOTE VELOCITY (a PATTERN's: empty tiles) */
+static const param_desc_t *pads_desc(uint32_t graph, uint32_t slot, int16_t **valp)
+{
+    const uint8_t *c = pads.cfg[pad_pick % PAD_N];
+    slot &= 3u;
+    if (graph == GR_PADS) {
+        *valp = &trk[slot].p[P_LEVEL];
+        return &PAD_LEVEL_D[slot];
+    }
+    if (slot && !(c[0] & PAD_SOUND)) {
+        *valp = 0;
+        return 0;
+    }
+    pad_ui[0] = (int16_t)((c[0] & PAD_SOUND) != 0u);
+    pad_ui[1] = (int16_t)PAD_TRK(c[0]);
+    pad_ui[2] = (int16_t)c[1];
+    pad_ui[3] = (int16_t)PAD_VEL(c[0]);
+    *valp = &pad_ui[slot];
+    return &PAD_SET_D[slot];
+}
+/* a knob turned on PADS (a LEVEL, as the MIXER turns it: the automation's base, recorded while REC is armed) or PAD
+ * SETUP (pads_knob) */
+static void pads_turn(uint32_t graph, uint32_t slot, int32_t steps)
+{
+    if (graph == GR_PADS) {
+        track_t *t = &trk[slot & 3u];
+        int32_t v = clamp(t->p[P_LEVEL] + accel(EN_K1 + (slot & 3u), steps, 127), 0, 127);
+        if (v != t->p[P_LEVEL]) {
+            t->p[P_LEVEL] = (int16_t)v;
+            (void)motion_capture(t, P_LEVEL, (int16_t)v);
+        }
+        ml_knob(t, P_LEVEL);                       /* (MIDI LEARN: picked, a slider's CC next) */
+        return;
+    }
+    pads_knob(slot & 3u, steps);
 }
