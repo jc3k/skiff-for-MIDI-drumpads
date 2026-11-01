@@ -469,7 +469,7 @@ else
     run "ASan/UBSan: update loader (other app -> this build)" "$A/ldr_test" "$OUT/old.fwsc" build/felucca.fwsc
     $SCC -DOWN_PKG=1 -o "$A/ota_test" tests/ota_test.c
     run "ASan/UBSan: M-UPGRADE entry (own loader)" "$A/ota_test" build/felucca.fwsc
-    for t in editor_test project_test backup_test conv_test robust_test bank_test duck_test persistence_test ui_test; do
+    for t in editor_test project_test backup_test conv_test robust_test bank_test pads_test duck_test persistence_test ui_test; do
         $SCC -o "$A/$t" tests/$t.c -lm
         run "ASan/UBSan: $t" "$A/$t"
     done

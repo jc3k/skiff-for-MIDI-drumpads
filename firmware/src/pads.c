@@ -25,12 +25,15 @@
 #define PAD_TRK(c) ((uint32_t)((c) & 7u) < NTRK ? (uint32_t)((c) & 7u) : 4u)
 #define PAD_VEL(c) (((uint32_t)(c) >> 3) & 15u)
 typedef struct {
-    uint8_t on;                                       /* 1: the pads are heard (MENU > MIDI > PADS) */
+    uint8_t on;                                       /* 1: the pads are heard (pads_heard: unless a track or SEL takes
+                                                       * their channel) */
     uint8_t ch;                                       /* their channel, 0..15 */
     uint8_t base[PAD_BANKS];                          /* bank A..D's pad 1 */
     uint8_t cfg[PAD_N][2];                            /* each pad: PAD_SOUND | VELOCITY << 3 | track, the note */
 } pads_t;
 static pads_t pads;                                   /* (the ISR reads it: .bss, as midi_ch) */
+static uint8_t pad_stopped;                           /* tracks a pad's STOP left on a rest, a bit each: SONG and a chain
+                                                       * leave them there until a launch (bank.c song_poll) */
 #define PAD_DEF_CH 9u
 static const uint8_t PAD_DEF_BASE[PAD_BANKS] = {36, 52, 68, 20};
 
@@ -127,6 +130,10 @@ static void pad_sound_off(uint32_t i)
         pad_held[i] = 0;
     }
 }
+/* the pads hear their channel: MIDI IN CH1-6 (TRACK), and no track set to it (MENU > MIDI > T1..T6 CHANNEL). A track on
+ * it, or MIDI IN SEL (every channel the selected track's), take it as Skiff always did: the way to turn the pads off.
+ * A SOUND pad held then still gets its release (pad_held, below) */
+static int pads_heard(void) { return !song.g[G_ROUTE] && midi_slot(pads.ch % 16u) < 0; }
 /* a channel message from MIDI IN (USB, TRS): 1 a pad's (done here), 0 any other (midi_event goes on with it) */
 static int pad_event(uint32_t st, uint32_t ch, uint32_t d1, uint32_t d2)
 {
@@ -134,6 +141,14 @@ static int pad_event(uint32_t st, uint32_t ch, uint32_t d1, uint32_t d2)
     int32_t p;
     if (!pads.on || ch != pads.ch % 16u || (st != 0x90u && st != 0x80u))
         return 0;
+    if (!pads_heard()) {                              /* (not the pads': a SOUND pad held from before still ends) */
+        p = on ? -1 : pad_of(d1);
+        if (p >= 0 && pad_held[p]) {
+            pad_sound_off((uint32_t)p);
+            return 1;
+        }
+        return 0;
+    }
     if (on && pad_learn) {                            /* (LEARN: the note is the bank's pad 1, pads_poll) */
         if (!pad_heard)
             pad_heard = (uint8_t)(d1 + 1u);
@@ -174,6 +189,7 @@ static void pads_load(const pads_t *p)
     uint32_t i;
     for (i = 0; i < PAD_N; i++)
         pad_sound_off(i);
+    pad_stopped = 0;
     if (p)
         pads = *p;
     else
@@ -182,6 +198,7 @@ static void pads_load(const pads_t *p)
 
 /* ---- for the main loop and the screens (pads_bank.c, ui_*.c) ---- */
 static void pads_poll(void);                          /* (pads_bank.c, after bank.c) */
+static int pads_rest_now(uint32_t k);                 /* track k on a rest now, stopped (a pad's STOP) */
 static uint32_t pads_playing(uint32_t b);             /* bank b's pad playing (0..15), PAD_PER none */
 static uint32_t pads_staged(uint32_t b);              /* .. the one staged to come in, PAD_PER none */
 static int pads_stopping(uint32_t b);                 /* .. a STOP staged */

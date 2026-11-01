@@ -4766,14 +4766,12 @@ static int test_midi_leds(void)
     bad += check("  TRS MIDI IN: E4 lights key 12 while held", ok && key_leds(0) == 0u);
     song.g[G_ROUTE] = 1;                               /* ROUT SEL: every channel to the selected track */
     sel_set(2);
-    pads.on = 0;                                       /* ((EMP16 pads) on, channel 10's 20..83 are the pads' first) */
     usb_note(9, 62, 100);
     ok = midi_sel_on[9][62] == 3u && key_leds(0) == 1u << 9;
     usb_note(9, 62, 0);
     song.g[G_ROUTE] = 0;
     sel_set(0);
-    pads.on = 1;
-    bad += check("  ROUT SEL: channel 10 into the selected track lights its key (the pads off)", ok && key_leds(0) == 0u);
+    bad += check("  ROUT SEL: channel 10 into the selected track lights its key", ok && key_leds(0) == 0u);
     usb_note(0, 60, 100);
     song.octave = -1;
     ok = key_leds(0) == 1u << 19;

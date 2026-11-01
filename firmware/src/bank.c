@@ -918,6 +918,7 @@ static int ent_go(uint32_t k, uint32_t e)
         return 1;
     if (trk_keep(k))
         return 4;
+    pad_stopped &= (uint8_t)~(1u << k);            /* ((EMP16 pads) on an entry again) */
     lists.cur[k] = (uint8_t)(e % NENT);
     esnd_go(k, e);
     if (id != PAT_NONE)
@@ -1032,7 +1033,9 @@ static void bank_poll_trk(uint32_t k)
     }
     if (q->armed && !song.playing) {
         q->armed = 0;
-        if (!q->adv)
+        if (!q->adv && q->rest)                    /* ((EMP16 pads) a pad's STOP: a rest, not the entry again) */
+            (void)pads_rest_now(k);
+        else if (!q->adv)
             (void)ent_go(k, q->slot);
         q->adv = 0;
         return;
@@ -1081,6 +1084,7 @@ static void bank_poll_trk(uint32_t k)
         }
     }
     q->adv = 0;
+    pad_stopped = (uint8_t)((pad_stopped & ~(1u << k)) | (q->rest ? 1u << k : 0u));   /* ((EMP16 pads) a STOP in) */
     trk_pid[k] = (uint8_t)(q->id == PAT_NONE ? 0u : q->id + 1u);   /* ((1.2.1, #12) a rest: on no pattern) */
     lists.cur[k] = (uint8_t)(q->slot % NENT);
     if (!q->same) {                                /* ((2.0.3, #71) the same pattern: its copy and automation as they
@@ -1238,6 +1242,8 @@ static void song_poll(void)
                 song_end &= (uint8_t)~(1u << k);
             bk.gen++;
         }
+        if (((pad_stopped >> k) & 1u) && !trk_pid[k])   /* ((EMP16 pads) a pad's STOP: silent until a launch, */
+            continue;                              /* neither the song nor a chain takes it on) */
         blk = ent_block(k, cur = lists.cur[k] % NENT, &b0, &b1);
         wait = chain_go[k] && (!blk || cur == b1);  /* ((2.0, #44) a LOOP launch waiting for the chain's end: here */
         if (song.playing && !sp_was) {             /* (PLAY: a chain on pass 1, none whole yet; kept stopped: TAKE) */

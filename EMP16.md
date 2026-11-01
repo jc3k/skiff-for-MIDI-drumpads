@@ -60,8 +60,10 @@ change loads every project made here (it does not see the pad setup).
 
 - With 4 banks and SOUND pads playing, notes share Skiff's 8 voices (12 with MENU › SYSTEM › CPU › 2 CORES).
 - With SONG on, the song moves the tracks on by itself after a pad's pattern.
-- Channel 10 is taken by the pads. With MIDI IN set to SEL, notes 20–83 on channel 10 go to the pads, not the selected
-  track.
+- The pads use channel 10 only while nothing else claims it. If a track is set to channel 10 (MENU › MIDI › T1–T6
+  CHANNEL), or MIDI IN is set to SEL, channel 10 works as in plain Skiff. That is also the way to turn the pads off.
+- A bank stopped from its pad stays stopped. A transport stop, SONG and a chain do not start it again. Only a pad (or a
+  launch from PERFORM or SONG) does.
 
 ## Building
 

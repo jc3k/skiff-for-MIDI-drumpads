@@ -32,6 +32,14 @@ static int gate(const track_t *t, uint32_t note)
     for (uint32_t i = 0; i < NVOICE; i++) if (t->v[i].active && t->v[i].gate && t->v[i].note == note) return 1;
     return 0;
 }
+static void on_page(uint32_t graph)               /* the page shown (pads_poll reads it: PAD SETUP, LEARN on PADS) */
+{
+    uint32_t i;
+    for (i = 0; i < NPAGES && PAGES[i].graph != graph; i++)
+        ;
+    ui.home = 0; ui.menu = 0; ui.layer = 0;
+    ui.page = (uint8_t)i;
+}
 static void pfresh(void)
 {
     fresh();
@@ -165,7 +173,8 @@ static int sounds_test(void)
     pmidi(0x89, 21, 0);
     ok &= !gate(&trk[2], 62);
     bad += pchk("  fixed VELOCITY 127 whatever the hit; changed while held, its release ends the note it started", ok);
-    pad_setup_on = 1;
+    on_page(GR_PADSET);
+    pads_poll();
     pmidi(0x99, 36, 100);
     pads_poll();
     ok = padq_w == padq_r && pad_pick == 0u;
@@ -174,7 +183,9 @@ static int sounds_test(void)
     pads_poll();
     ok &= gate(t, 36) && pad_pick == 48u;
     pmidi(0x89, 20, 0);
-    pad_setup_on = 0;
+    on_page(GR_SONG);
+    pads_poll();
+    ok &= !pad_setup_on;
     bad += pchk("PAD SETUP open: a PATTERN pad picks, launches nothing; a SOUND pad picks and sounds", ok);
     return bad;
 }
@@ -183,6 +194,7 @@ static int setup_test(void)
 {
     int bad = 0, ok;
     pfresh();
+    on_page(GR_PADS);
     pads_learn(1);
     ok = pad_learn == 1u && msg_is_b("LEARN: HIT PAD 1 OF A");
     pmidi(0x99, 48, 100); pads_poll();
@@ -244,6 +256,72 @@ static int project_test_pads(void)
     return bad;
 }
 
+/* the review's: a STOP that sticks (the transport stopped before its launch point; SONG on; a chain), LEARN with a
+ * SOUND pad held, the pads giving channel 10 back to a track set to it or to MIDI IN SEL */
+static int sticky(void)
+{
+    int bad = 0, ok;
+    track_t *t = &trk[0];
+    uint32_t n;
+    pfresh();
+    simple(0, 60, 8, DIR_FWD);
+    bank_put(0, 1, 0);
+    simple(0, 80, 8, DIR_FWD);
+    bank_put(0, 2, 0);
+    transport_req = 2; events_block(1); bank_poll();
+    hit(0, 2);
+    ui_launch = LAUNCH_LOOP;
+    transport_req = 1; events_block(1);
+    lv_next(2);
+    hit(0, 2);                                    /* STOP staged, then the transport stops before it lands */
+    ok = pads_stopping(0);
+    transport_req = 2; events_block(1); bank_poll();
+    ok &= pads_playing(0) == PAD_PER && trk_pid[0] == 0 && seq_is_empty(t) && !launch_q[0].armed;
+    transport_req = 1; events_block(1);
+    lv_next(3);
+    ok &= !t->seq_n;
+    bad += pchk("a STOP staged, the transport stopped first: the bank is stopped (not its pattern again); PLAY: silent", ok);
+
+    lists.song = SONG_ON;                         /* SONG on, B then C: the song does not take a stopped bank on */
+    hit(0, 2);
+    for (n = 0; n < 24u && pads_playing(0) != 1u; n++) { lv_next(1); bank_poll(); song_poll(); }
+    ok = pads_playing(0) == 1u;
+    hit(0, 2);
+    for (n = 0; n < 40u; n++) { lv_next(1); bank_poll(); song_poll(); }
+    ok &= pads_playing(0) == PAD_PER && !t->seq_n && !launch_q[0].armed;
+    lists.song = SONG_OFF;
+    bad += pchk("  SONG on: a pad's STOP holds (the song stages nothing for the bank until a pad starts it)", ok);
+    hit(0, 3);
+    for (n = 0; n < 24u && pads_playing(0) != 2u; n++) { lv_next(1); bank_poll(); song_poll(); }
+    bad += pchk("  .. a pad starts it again", pads_playing(0) == 2u && !(pad_stopped & 1u));
+    transport_req = 2; events_block(1); bank_poll();
+
+    pfresh();
+    pads.cfg[48][0] = PAD_SOUND | 4u;
+    pads.cfg[48][1] = 36;
+    on_page(GR_PADS);
+    pmidi(0x99, 20, 100);
+    ok = gate(&trk[4], 36);
+    pads_learn(1);
+    ok &= !gate(&trk[4], 36) && !pad_held[48];
+    pmidi(0x89, 20, 0);
+    pads_learn(0);
+    bad += pchk("LEARN with a SOUND pad held: its note ends at once (the runs may move)", ok);
+
+    pfresh();
+    song.g[G_ROUTE] = 0;
+    ((uint8_t *)mch_io)[1] = 8;                   /* T2 on CH 10 (MENU > MIDI > T2 CHANNEL): the track's channel */
+    ok = !pad_event(0x90, 9, 36, 100) && pads.on;
+    ((uint8_t *)mch_io)[1] = 0;
+    ok &= pad_event(0x90, 9, 36, 100) == 1;
+    padq_r = padq_w;
+    song.g[G_ROUTE] = 1;
+    ok &= !pad_event(0x90, 9, 36, 100);
+    song.g[G_ROUTE] = 0;
+    bad += pchk("a track set to CH 10, or MIDI IN SEL: channel 10 is theirs as before; back: the pads'", ok);
+    return bad;
+}
+
 int main(void)
 {
     int bad = 0;
@@ -252,6 +330,7 @@ int main(void)
     bad += sounds_test();
     bad += setup_test();
     bad += project_test_pads();
+    bad += sticky();
     if (bad) {
         printf("pads: %d FAILED\n", bad);
         return 1;

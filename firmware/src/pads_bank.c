@@ -47,6 +47,7 @@ static int pads_rest_now(uint32_t k)
     track_defaults_steps(&trk[k]);
     trk[k].p[P_SGATE] = TP[P_SGATE].def;
     trk_pid[k] = 0;
+    pad_stopped |= (uint8_t)(1u << k);
     bk.gen++;
     ui.force = 1;
     return 0;
@@ -108,6 +109,7 @@ static void pads_press(uint32_t i)
 /* LEARN on (1: waiting for bank A's pad 1, .. D's), or off */
 static void pads_learn(int on)
 {
+    pads_release_all();                            /* (the runs move: what sounds ends now, not on a release elsewhere) */
     pad_heard = 0;
     pad_learn = (uint8_t)(on ? 1u : 0u);
     if (on)
@@ -131,6 +133,7 @@ static void pads_poll(void)
     if (pad_learn && pad_heard) {                  /* (LEARN: the note bank pad_learn - 1's pad 1; then the next) */
         uint32_t b = (pad_learn - 1u) % PAD_BANKS;
         char s[2] = {(char)('B' + b), 0};
+        pads_release_all();
         pads.base[b] = (uint8_t)(pad_heard - 1u);
         pad_heard = 0;
         if (b + 1u < PAD_BANKS) {
