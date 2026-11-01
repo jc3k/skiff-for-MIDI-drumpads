@@ -28,6 +28,8 @@ typedef struct {
     uint8_t id, mlost;                             /* (phase 5) its pattern; 1: it comes without its automation */
     uint8_t reps;                                  /* .. the passes the one playing makes before it (a song's; 0 none) */
     uint8_t snd;                                   /* ((2.0, #30) 1: the entry's sound comes in with it, esnd) */
+    uint8_t rest;                                  /* (EMP16 pads) 1: a pad's STOP, a rest staged (pads_bank.c pads_stop):
+                                                    * main loop only */
     uint8_t same;                                  /* ((2.0.3, #71) 1: the pattern the track is on (bank.c stage_entry):
                                                     * the swap leaves the track its own steps, timing and automation,
                                                     * edited since this copy was made; the entry's sound and a new pass */

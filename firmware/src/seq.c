@@ -1658,6 +1658,7 @@ static uint32_t midi_route_key(void)
 }
 
 #include "midi_control.c"
+#include "pads.c"                                   /* (EMP16 pads) a pad controller's 4 x 16 pads: patterns, sounds */
 #include "midi_clock.c"
 
 /* the count-in: its first beat now (accented) */

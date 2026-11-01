@@ -137,6 +137,8 @@ typedef struct {
     uint8_t scene[PROJ_SCENES];                /* (SKF2) the scenes (bank.c) */
     uint8_t dx_on;                             /* (Skiff phase 7) 1: dx is the project's DRUM-X kit; 0 none (the factory's) */
     dx_lane_t dx[DV_NLANE];                    /* (SKF3) the DRUM-X kit (drumx_voice.c dx_kit), one for every DRUM-X track */
+    uint8_t pads_on;                           /* (EMP16 pads) 1: pads is the project's; 0 none (the defaults: pads.c) */
+    pads_t pads;                               /* .. the pads' setup (pads.c), SKF4's PAD block */
     uint32_t sum;
 } project_t;
 #if FELUCCA_LEGACY
@@ -207,6 +209,15 @@ static const proj_fmt_t PROJ_SKF3 = {PROJ_MAGIC3, PROJ_STORE3, 6u, PROJ_SCENES, 
 static const proj_fmt_t PROJ_SKF4 = {PROJ_MAGIC4, PROJ_STORE4, 6u, PROJ_SCENES, 1u};
 _Static_assert(PROJ_ENT4 + NTRK * (NENT * 4u + 1u) + PROJ_SCENES + 2u + 1u + DV_NLANE * 11u + NTRK * FM6_PACKED +
                1u + 2u * GSID_COUNT + NTRK * (4u + SID_COUNT) + PROJ_NAME_LEN + 4u <= PROJ_STORE4, "SKF4 holds it all");
+/* (EMP16 pads) SKF4's PAD block: PROJ_PAD_MARK, its version, then pads.c's pads_t, just before the name (the tracks end
+ * well before it: firmware without it reads the record as it was, its tail passed over). Written when the pads are not
+ * the defaults; a record without it (every one of before) loads the defaults */
+#define PROJ_PAD_MARK 0x45u                   /* ('E') */
+#define PROJ_PAD_VER 1u
+#define PROJ_PAD_AT(f) ((f)->size - 4u - PROJ_NAME_LEN - 2u - (uint32_t)sizeof(pads_t))
+_Static_assert(PROJ_ENT4 + NTRK * (NENT * 4u + 1u) + PROJ_SCENES + 2u + 1u + DV_NLANE * 11u + NTRK * FM6_PACKED +
+               1u + 2u * GSID_COUNT + NTRK * (4u + SID_COUNT) + 2u + sizeof(pads_t) + PROJ_NAME_LEN + 4u <= PROJ_STORE4,
+               "SKF4 holds the pads too");
 #define PROJ_SKF (&PROJ_SKF4)                  /* the format a save writes */
 #define PROJ_NAME_AT(f) ((f)->size - 4u - PROJ_NAME_LEN)
 #define PROJ_FM6_AT(f) (PROJ_NAME_AT(f) - (f)->nt * FM6_PACKED)
@@ -1020,6 +1031,11 @@ static int proj_pack4(project_store_t *out, const project_t *q)
         if (!(n = sid_put(b + pos, q->t[t].p))) return 0;
         pos += n;
     }
+    if (q->pads_on && pos <= PROJ_PAD_AT(&PROJ_SKF4)) {   /* (EMP16 pads) */
+        b[PROJ_PAD_AT(&PROJ_SKF4)] = PROJ_PAD_MARK;
+        b[PROJ_PAD_AT(&PROJ_SKF4) + 1u] = PROJ_PAD_VER;
+        memcpy(b + PROJ_PAD_AT(&PROJ_SKF4) + 2u, &q->pads, sizeof q->pads);
+    }
     {
         char nm[PROJ_NAME_LEN + 1u];
         memcpy(b + PROJ_NAME_AT(&PROJ_SKF4), nm, proj_name_get(nm, (const uint8_t *)q->name));
@@ -1076,6 +1092,11 @@ static int proj_unpack4(project_t *q, const uint8_t *b)
 #if FELUCCA_LEGACY
     chain_defaults(&q->chain);
 #endif
+    if (pos <= PROJ_PAD_AT(&PROJ_SKF4) && b[PROJ_PAD_AT(&PROJ_SKF4)] == PROJ_PAD_MARK &&   /* (EMP16 pads) */
+        b[PROJ_PAD_AT(&PROJ_SKF4) + 1u] == PROJ_PAD_VER) {
+        memcpy(&q->pads, b + PROJ_PAD_AT(&PROJ_SKF4) + 2u, sizeof q->pads);
+        q->pads_on = pads_ok(&q->pads);
+    }
     {
         char nm[PROJ_NAME_LEN + 1u];
         memcpy(q->name, nm, proj_name_get(nm, b + end));
@@ -1364,6 +1385,10 @@ static void project_capture(project_t *p)
         p->dx_on = 1;                              /* the factory's when loaded; a project of before as it was) */
         memcpy(p->dx, dx_kit, sizeof p->dx);
     }
+    if (!pads_is_default()) {                      /* (EMP16 pads) their setup, when not the defaults */
+        p->pads_on = 1;
+        p->pads = pads;
+    }
     p->sum = proj_sum(p);
 }
 
@@ -1539,6 +1564,7 @@ static int project_restore_runtime(const project_t *input)
     }
     sel_set((uint8_t)(p->sel < NTRK ? p->sel : 0u));
     memcpy(dx_kit, p->dx_on && dx_kit_ok(p->dx) ? p->dx : DX_KIT_DEF, sizeof dx_kit);   /* (phase 7) its DRUM-X kit */
+    pads_load(p->pads_on && pads_ok(&p->pads) ? &p->pads : 0);   /* (EMP16 pads) its pads' setup, else the defaults */
     fm1_irq_on();
     proj_name_get(proj_name, (const uint8_t *)p->name);
     proj_cur = PROJ_NO_SLOT;                            /* (project_load: its slot) */
@@ -1769,6 +1795,7 @@ static uint32_t autosave_sig(void)
     h = as_mix(h, &motion, sizeof motion);
     h = as_mix(h, &lists, sizeof lists);              /* (phase 5) the lists, the patterns the tracks are on */
     h = as_mix(h, trk_pid, sizeof trk_pid);
+    h = as_mix(h, &pads, sizeof pads);                /* (EMP16 pads) their setup: the project's */
     i = (ui_prefs & PREF_RESTORE_OFF) != 0;           /* (RESTORE LAST back ON: a round, the project written) */
     h = as_mix(h, &i, sizeof i);
     return as_mix(h, proj_name, sizeof proj_name);

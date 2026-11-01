@@ -392,8 +392,11 @@ static void __attribute__((noinline)) midi_route_drop(void)
  * the UI: none) */
 static volatile uint8_t *const mpc_io;
 
+static int pad_event(uint32_t st, uint32_t ch, uint32_t d1, uint32_t d2);   /* (EMP16 pads) pads.c */
 static void __attribute__((noinline)) midi_event(uint32_t st, uint32_t ch, uint32_t d1, uint32_t d2)
 {
+    if (pad_event(st, ch, d1, d2))                 /* (EMP16 pads) a pad of a pad controller: its PATTERN or SOUND */
+        return;
     if (!song.g[G_ROUTE] && midi_slot(ch) < 0)    /* (CH1-6: a channel no track is set to) */
         return;
     if (st == 0x90u || st == 0x80u)

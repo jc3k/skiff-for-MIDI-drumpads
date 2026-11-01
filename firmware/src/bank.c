@@ -1111,14 +1111,17 @@ static uint32_t list_sig(uint32_t k)
  * empty entry (song_poll: a rest), (#28) any on a REST: silence, no automation, the track's own LEN DIV SWING GATE DIR,
  * so the rest's REPS count passes of the length the track has; on no pattern (trk_pid 0), so nothing is kept unless it
  * was recorded into */
+static uint8_t stage_rest_req;                     /* (EMP16 pads) 1: the next stage_entry stages a rest on e, whatever
+                                                    * it names (pads_bank.c pads_stop: a pad's STOP) */
 static int stage_entry(uint32_t k, uint32_t e, uint32_t m, uint32_t adv, uint32_t reps)
 {
     track_t *t = &trk[k];
     launch_t *q = &launch_q[k];
-    uint32_t id = ent_pat(k, e), full = 0, i, same;
+    uint32_t id = ent_pat(k, e), full = 0, i, same, rest = stage_rest_req;
+    stage_rest_req = 0;
     if (q->done || (!trk_pid[k] && !seq_is_empty(t) && pool_alloc() == NPAT))
         return 4;
-    if ((adv == 2u || !bank_used(k, e)) && (adv || ent_rest(k, e))) {   /* ((2.0) adv 2: SONG ONCE's end, a rest on e
+    if (rest || ((adv == 2u || !bank_used(k, e)) && (adv || ent_rest(k, e)))) {   /* ((2.0) adv 2: SONG ONCE's end, a rest on e
                                                                             * whatever it names: song_poll) */
         for (i = 0; i < NSTEP; i++)
             step_clear(&q->step[i]);
@@ -1148,7 +1151,8 @@ static int stage_entry(uint32_t k, uint32_t e, uint32_t m, uint32_t adv, uint32_
     q->adv = (uint8_t)adv;
     q->reps = (uint8_t)reps;
     q->done = 0;
-    q->snd = (uint8_t)(adv != 2u && esnd_make(k, lists.snd[k][e % NENT], &esnd[k]));   /* ((2.0, #30) its sound, made
+    q->rest = (uint8_t)rest;
+    q->snd = (uint8_t)(adv != 2u && !rest && esnd_make(k, lists.snd[k][e % NENT], &esnd[k]));   /* ((2.0, #30) its sound, made
                                                                                        * now: in at the swap) */
     q->same = (uint8_t)same;
     q_lsig[k] = list_sig(k);
@@ -2072,3 +2076,4 @@ static int proj_migrate(int allowed)
     return wrote;
 }
 #endif
+#include "pads_bank.c"                            /* (EMP16 pads) a PATTERN pad launched, a bank stopped, PAD SETUP */

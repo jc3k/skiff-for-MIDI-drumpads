@@ -2098,6 +2098,7 @@ static void ui_input(void)
     clock_wait_poll();                                  /* (PLAY on an external clock that sends nothing: say so) */
     bank_poll();                                        /* (Skiff) a pattern switched in live: what went out kept */
     song_poll();                                        /* (Skiff phase 5) SONG: each track's next entry staged */
+    pads_poll();                                        /* (EMP16 pads) a PATTERN pad's hit, LEARN */
 #if !FELUCCA_FM4 && FELUCCA_LEGACY
     for (k = 0; k < NTRK; k++)                          /* a DIGITAL sound any other way (the paths convert it */
         if (trk[k].eng_req == ENGI_DIGITAL)             /* already): FM6 (fm4_convert.c) */

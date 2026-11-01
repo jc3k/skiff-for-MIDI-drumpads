@@ -115,6 +115,7 @@ static void felucca_init(void)
         track_defaults_steps(t);              /* (a sound load never touches them) */
     }
     lists_clear();                            /* (Skiff phase 5) no lists, no patterns on the tracks */
+    pads_defaults();                          /* (EMP16 pads) the EMP16's own notes, every pad a PATTERN */
     undo_depth--;
     sel_set(0);
     song.master_q12 = 2048;                   /* (the pot's level replaces it before the audio starts: master_boot) */

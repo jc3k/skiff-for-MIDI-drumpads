@@ -1646,6 +1646,7 @@ static int song_chain(void)
     return bad;
 }
 
+#ifndef BANK_TEST_NO_MAIN                         /* (EMP16 pads: tests/pads_test.c builds on this file) */
 int main(void)
 {
     int bad = layout() + fidelity() + keep() + entries() + staged_all() + last_track() + torn() + wear_and_wrap() +
@@ -1654,3 +1655,4 @@ int main(void)
     printf("%s\n", bad ? "BANK TEST FAILED" : "pattern bank tests passed");
     return bad != 0;
 }
+#endif
